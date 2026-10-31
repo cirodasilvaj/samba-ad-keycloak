@@ -1,0 +1,240 @@
+---
+# ============================================================================
+# ETAPA 1: Provisionar Samba 4 AD DC 1 (Principal - Sem DNS Embutido) + FreeRADIUS MFA
+# ============================================================================
+- name: Configurar Samba 4 AD DC Principal (DC1) e FreeRADIUS MFA
+  hosts: role_samba_dc_primary
+  become: true
+  vars:
+    domain_name: "empresa.local"
+    domain_realm: "EMPRESA.LOCAL"
+    domain_workgroup: "EMPRESA"
+    admin_password: "{{ lookup('env', 'AD_ADMIN_PASSWORD') | default('SuaSenhaForte123!', true) }}"
+    radius_secret: "{{ lookup('env', 'RADIUS_SHARED_SECRET') | default('RadiusSecret2026!', true) }}"
+    vpc_cidr: "10.0.0.0/16"
+
+  tasks:
+    - name: Garantir arquivo de Swap de 1GB para t3.micro
+      command: |
+        bash -c "if [ ! -f /swapfile ]; then
+          fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        fi"
+      args:
+        creates: /swapfile
+
+    - name: Instalar pacotes do Samba 4 AD, Kerberos, Winbind e FreeRADIUS MFA
+      apt:
+        name:
+          - samba
+          - krb5-user
+          - winbind
+          - libpam-winbind
+          - libnss-winbind
+          - smbclient
+          - python3-winbind
+          - freeradius
+          - freeradius-ldap
+          - freeradius-utils
+          - libpam-google-authenticator
+        state: present
+        update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Remover smb.conf original antes do provisionamento
+      file:
+        path: /etc/samba/smb.conf
+        state: absent
+      when: not ansible_check_mode
+
+    - name: Provisionar Dominio Samba 4 sem DNS embutido (--dns-backend=NONE)
+      command: >
+        samba-tool domain provision
+        --use-rfc2307
+        --realm={{ domain_realm }}
+        --domain={{ domain_workgroup }}
+        --server-role=dc
+        --dns-backend=NONE
+        --adminpass='{{ admin_password }}'
+      args:
+        creates: /var/lib/samba/private/sam.ldb
+
+    - name: Habilitar e Iniciar o servico Samba AD DC
+      systemd:
+        name: samba-ad-dc
+        state: started
+        enabled: true
+        masked: false
+
+    - name: Criar grupos corporativos para EKS, Backstage, ArgoCD, Grafana e MFA
+      command: "samba-tool group add {{ item }}"
+      loop:
+        - EKS-Admins
+        - Backstage-Users
+        - ArgoCD-Admins
+        - Grafana-Admins
+        - MFA-Radius-Users
+      register: group_create
+      failed_when: group_create.rc != 0 and 'already exists' not in group_create.stderr
+      changed_when: group_create.rc == 0
+
+    - name: Configurar cliente VPC no FreeRADIUS para autenticacao geral e MFA
+      blockinfile:
+        path: /etc/freeradius/3.0/clients.conf
+        marker: "# {mark} ANSIBLE MANAGED EKS VPC CLIENT"
+        block: |
+          client vpc-eks-network {
+            ipaddr = {{ vpc_cidr }}
+            secret = {{ radius_secret }}
+            require_message_authenticator = no
+            nas_type = other
+          }
+
+    - name: Habilitar e Iniciar o servico FreeRADIUS
+      systemd:
+        name: freeradius
+        state: restarted
+        enabled: true
+
+# ============================================================================
+# ETAPA 2: Provisionar Samba 4 AD DC 2 (Replica - Sem DNS Embutido) + FreeRADIUS MFA
+# ============================================================================
+- name: Configurar Samba 4 AD DC Secundario (DC2 - Replica) e FreeRADIUS MFA
+  hosts: role_samba_dc_replica
+  become: true
+  vars:
+    domain_name: "empresa.local"
+    domain_realm: "EMPRESA.LOCAL"
+    domain_workgroup: "EMPRESA"
+    admin_password: "{{ lookup('env', 'AD_ADMIN_PASSWORD') | default('SuaSenhaForte123!', true) }}"
+    radius_secret: "{{ lookup('env', 'RADIUS_SHARED_SECRET') | default('RadiusSecret2026!', true) }}"
+    vpc_cidr: "10.0.0.0/16"
+
+  tasks:
+    - name: Garantir arquivo de Swap de 1GB para t3.micro
+      command: |
+        bash -c "if [ ! -f /swapfile ]; then
+          fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        fi"
+      args:
+        creates: /swapfile
+
+    - name: Instalar pacotes do Samba 4 AD e FreeRADIUS MFA
+      apt:
+        name:
+          - samba
+          - krb5-user
+          - winbind
+          - libpam-winbind
+          - libnss-winbind
+          - smbclient
+          - python3-winbind
+          - freeradius
+          - freeradius-ldap
+          - freeradius-utils
+          - libpam-google-authenticator
+        state: present
+        update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Fazer Join no Dominio como DC Secundario sem DNS embutido (--dns-backend=NONE)
+      command: >
+        samba-tool domain join {{ domain_realm }} DC
+        -U"{{ domain_workgroup }}\Administrator"
+        --password='{{ admin_password }}'
+        --dns-backend=NONE
+        --server=dc1.{{ domain_name }}
+      args:
+        creates: /var/lib/samba/private/sam.ldb
+
+    - name: Habilitar e Iniciar o servico Samba AD DC Replica
+      systemd:
+        name: samba-ad-dc
+        state: started
+        enabled: true
+        masked: false
+
+    - name: Configurar cliente VPC no FreeRADIUS Replica
+      blockinfile:
+        path: /etc/freeradius/3.0/clients.conf
+        marker: "# {mark} ANSIBLE MANAGED EKS VPC CLIENT"
+        block: |
+          client vpc-eks-network {
+            ipaddr = {{ vpc_cidr }}
+            secret = {{ radius_secret }}
+            require_message_authenticator = no
+            nas_type = other
+          }
+
+    - name: Habilitar e Iniciar o servico FreeRADIUS Replica
+      systemd:
+        name: freeradius
+        state: restarted
+        enabled: true
+
+# ============================================================================
+# ETAPA 3: Provisionar Servidor Keycloak (SAML 2.0 / OIDC / MFA)
+# ============================================================================
+- name: Configurar Servidor Keycloak IAM (Otimizado para t3.micro)
+  hosts: role_keycloak_server
+  become: true
+  vars:
+    keycloak_version: "24.0.1"
+    keycloak_admin_user: "admin"
+    keycloak_admin_password: "{{ lookup('env', 'KEYCLOAK_ADMIN_PASSWORD') | default('KeycloakAdmin2026!', true) }}"
+
+  tasks:
+    - name: Garantir arquivo de Swap de 2GB para o Keycloak rodar em t3.micro
+      command: |
+        bash -c "if [ ! -f /swapfile ]; then
+          fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        fi"
+      args:
+        creates: /swapfile
+
+    - name: Instalar OpenJDK 21 Headless
+      apt:
+        name: openjdk-21-jre-headless
+        state: present
+        update_cache: true
+
+    - name: Baixar e Extrair Keycloak {{ keycloak_version }}
+      unarchive:
+        src: "https://github.com/keycloak/keycloak/releases/download/{{ keycloak_version }}/keycloak-{{ keycloak_version }}.tar.gz"
+        dest: /opt/
+        remote_src: true
+        creates: "/opt/keycloak-{{ keycloak_version }}/bin/kc.sh"
+
+    - name: Criar Servico Systemd do Keycloak com limites de JVM (-Xms256m -Xmx512m)
+      copy:
+        dest: /etc/systemd/system/keycloak.service
+        content: |
+          [Unit]
+          Description=Keycloak IAM Server (SAML 2.0 / OIDC / Samba 4 AD Federation)
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          Environment="KEYCLOAK_ADMIN={{ keycloak_admin_user }}"
+          Environment="KEYCLOAK_ADMIN_PASSWORD={{ keycloak_admin_password }}"
+          Environment="JAVA_OPTS_APPEND=-Xms256m -Xmx512m"
+          ExecStart=/opt/keycloak-{{ keycloak_version }}/bin/kc.sh start-dev --http-port=80 --import-realm
+          Restart=always
+          RestartSec=10
+          TimeoutStartSec=600
+          TimeoutStopSec=50
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Iniciar e Habilitar Servico do Keycloak
+      systemd:
+        name: keycloak
+        state: started
+        enabled: true
+        daemon_reload: true

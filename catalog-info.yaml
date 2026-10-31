@@ -1,0 +1,161 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: samba-ad-keycloak-iam
+  description: Arquitetura Corporativa IAM na VPC do EKS (Samba 4 AD Multi-DC sem DNS interno + Route 53 Private Zone + FreeRADIUS MFA + Keycloak SAML 2.0 / OIDC)
+spec:
+  owner: platform-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: samba-ad-dc
+  description: Samba 4 Active Directory Multi-DC (DC1 Principal + DC2 Réplica em Multi-AZ com --dns-backend=NONE e Route 53 Private Hosted Zone)
+  annotations:
+    github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/kubernetes-id: samba-ad-dc
+    backstage.io/kubernetes-namespace: default
+  tags:
+    - samba4
+    - active-directory
+    - ldap
+    - kerberos
+    - route53
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  providesApis:
+    - ldap-ad-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: freeradius-mfa
+  description: Servidor FreeRADIUS + PAM Google Authenticator (TOTP MFA) integrado ao Samba 4 AD para autenticação geral e MFA na VPC do EKS
+  annotations:
+    github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/kubernetes-id: freeradius-mfa
+    backstage.io/kubernetes-namespace: default
+  tags:
+    - radius
+    - freeradius
+    - mfa
+    - totp
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  dependsOn:
+    - component:default/samba-ad-dc
+  providesApis:
+    - radius-mfa-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: keycloak-sso
+  description: Servidor Keycloak IAM (Broker SAML 2.0, OAuth2 e OIDC) federado via LDAP ao Samba 4 AD para autenticar Backstage, ArgoCD, Grafana e Apps Demo
+  annotations:
+    github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/kubernetes-id: keycloak-sso
+    backstage.io/kubernetes-namespace: default
+  tags:
+    - keycloak
+    - saml2
+    - oidc
+    - sso
+    - mfa
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  dependsOn:
+    - component:default/samba-ad-dc
+    - component:default/freeradius-mfa
+  providesApis:
+    - saml-idp-api
+    - oidc-idp-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: saml-idp-api
+  description: Endpoint SAML 2.0 Identity Provider do Keycloak (sso.empresa.local)
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: Keycloak SAML 2.0 IdP Descriptor
+      version: "1.0.0"
+    paths:
+      /realms/empresa/protocol/saml/descriptor:
+        get:
+          summary: Retorna o XML de metadados SAML 2.0 do Realm empresa
+          responses:
+            "200":
+              description: SAML 2.0 Metadata XML
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: oidc-idp-api
+  description: Endpoint OpenID Connect (OIDC) Discovery do Keycloak (sso.empresa.local)
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: Keycloak OIDC Discovery API
+      version: "1.0.0"
+    paths:
+      /realms/empresa/.well-known/openid-configuration:
+        get:
+          summary: Retorna a configuracao OIDC do Realm empresa
+          responses:
+            "200":
+              description: OIDC Discovery JSON
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: ldap-ad-api
+  description: Endpoint LDAP/LDAPS Round-Robin do Samba 4 AD (ldap://ad.empresa.local:389)
+spec:
+  type: grpc
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  definition: |
+    syntax = "proto3";
+    service ActiveDirectoryLDAP {
+      // ldap://ad.empresa.local:389 (Round-Robin DC1 & DC2)
+      // Base DN: DC=empresa,DC=local
+    }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: radius-mfa-api
+  description: Endpoint FreeRADIUS Auth (UDP 1812) e Acct (UDP 1813) com suporte a MFA (radius.empresa.local)
+spec:
+  type: grpc
+  lifecycle: production
+  owner: platform-team
+  system: samba-ad-keycloak-iam
+  definition: |
+    syntax = "proto3";
+    service FreeRadiusMFA {
+      // UDP radius.empresa.local:1812 (Auth + MFA)
+      // UDP radius.empresa.local:1813 (Accounting)
+    }

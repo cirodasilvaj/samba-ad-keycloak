@@ -1,0 +1,102 @@
+name: Deploy Samba 4 AD + FreeRADIUS MFA + Keycloak IAM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "ansible/**"
+      - "k8s/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "ansible/**"
+      - "k8s/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        type: choice
+        options: [plan, apply, destroy]
+        default: apply
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.10.5"
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: tf-samba-ad-keycloak
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init (backend-less syntax validation)
+        if: env.AWS_ACCESS_KEY_ID == ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Configure AWS credentials
+        if: env.AWS_ACCESS_KEY_ID != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Ensure state bucket and run Terraform
+        if: env.AWS_ACCESS_KEY_ID != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET="backstage-infra-tfstate-${ACCOUNT_ID}"
+          if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$BUCKET"
+            aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
+          fi
+          aws s3 rm "s3://${BUCKET}/samba-ad-keycloak/terraform.tfstate.tflock" 2>/dev/null || true
+
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${BUCKET}" \
+            -backend-config="key=samba-ad-keycloak/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true"
+
+          terraform validate
+
+          ACTION="${{ github.event_name == 'push' && 'apply' || github.event.inputs.action || 'plan' }}"
+          case "$ACTION" in
+            plan)
+              terraform plan -input=false ;;
+            apply)
+              terraform apply -input=false -auto-approve
+              aws eks update-kubeconfig --name "kube-demo-eks" --region "${AWS_REGION}"
+              kubectl apply -f ../k8s/eks-iam-integration.yaml || true
+              terraform output ;;
+            destroy)
+              terraform destroy -input=false -auto-approve ;;
+          esac

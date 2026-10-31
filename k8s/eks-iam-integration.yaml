@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-sso
+  namespace: default
+  labels:
+    app.kubernetes.io/name: keycloak-sso
+    app.kubernetes.io/part-of: samba-ad-keycloak
+    backstage.io/kubernetes-id: keycloak-sso
+spec:
+  type: ExternalName
+  externalName: sso.empresa.local
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba-ad-ldap
+  namespace: default
+  labels:
+    app.kubernetes.io/name: samba-ad-ldap
+    app.kubernetes.io/part-of: samba-ad-keycloak
+    backstage.io/kubernetes-id: samba-ad-dc
+spec:
+  type: ExternalName
+  externalName: ad.empresa.local
+  ports:
+    - name: ldap
+      port: 389
+      targetPort: 389
+      protocol: TCP
+    - name: ldaps
+      port: 636
+      targetPort: 636
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: freeradius-mfa
+  namespace: default
+  labels:
+    app.kubernetes.io/name: freeradius-mfa
+    app.kubernetes.io/part-of: samba-ad-keycloak
+    backstage.io/kubernetes-id: freeradius-mfa
+spec:
+  type: ExternalName
+  externalName: radius.empresa.local
+  ports:
+    - name: radius-auth
+      port: 1812
+      targetPort: 1812
+      protocol: UDP
+    - name: radius-acct
+      port: 1813
+      targetPort: 1813
+      protocol: UDP
