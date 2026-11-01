@@ -22,9 +22,18 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "samba-ad-keycloak"
-      ManagedBy = "terraform"
-      Cluster   = var.eks_cluster_name
+      Project           = "samba-ad-keycloak"
+      SourceProject     = "samba-ad-keycloak"
+      Environment       = "sandbox"
+      ManagedBy         = "terraform"
+      ResourceGenerator = "terraform"
+      CostCenter        = "devops-platform-cloud"
+      CloudProvider     = "aws"
+      Owner             = "platform-team"
+      Repository        = "https://github.com/cirodasilvaj/samba-ad-keycloak"
+      Cluster           = var.eks_cluster_name
+      Lifecycle         = "ephemeral-7h"
+      Provisioner       = "github-actions"
     }
   }
 }
