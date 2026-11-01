@@ -101,3 +101,41 @@ output "keycloak_oidc_discovery_url" {
   description = "OIDC OpenID Configuration URL for EKS and cluster apps"
   value       = "http://sso.${var.domain_name}/realms/empresa/.well-known/openid-configuration"
 }
+
+# ==============================================================================
+# Route 53 Lab Domain DNS Outputs
+# ==============================================================================
+
+output "route53_discovered_lab_domain" {
+  description = "Auto-discovered Route 53 lab base domain"
+  value       = local.lab_domain
+}
+
+output "route53_lab_zone_id" {
+  description = "Auto-discovered Route 53 lab hosted zone ID"
+  value       = local.lab_zone_id
+}
+
+output "route53_lab_dns_endpoints" {
+  description = "DNS endpoints registered in the lab's Route 53 hosted zone"
+  value = local.has_lab_zone ? {
+    ad_round_robin = "ldap://ad.${local.lab_domain}:389"
+    dc1            = "dc1.${local.lab_domain} -> ${aws_instance.samba_dc1.private_ip}"
+    dc2            = "dc2.${local.lab_domain} -> ${aws_instance.samba_dc2.private_ip}"
+    radius_mfa     = "radius.${local.lab_domain}:1812"
+    keycloak_sso   = "http://sso.${local.lab_domain}"
+    keycloak_admin = "http://keycloak.${local.lab_domain}"
+  } : {}
+}
+
+output "route53_all_dns_summary" {
+  description = "Comprehensive summary of all active DNS endpoints (Private Zone & Lab Zone)"
+  value = {
+    domain_private = var.domain_name
+    domain_lab     = local.lab_domain
+    ad_ldap        = local.has_lab_zone ? "ldap://ad.${local.lab_domain}:389" : "ldap://ad.${var.domain_name}:389"
+    keycloak_sso   = local.has_lab_zone ? "http://sso.${local.lab_domain}" : "http://sso.${var.domain_name}"
+    radius_mfa     = local.has_lab_zone ? "radius.${local.lab_domain}:1812" : "radius.${var.domain_name}:1812"
+  }
+}
+

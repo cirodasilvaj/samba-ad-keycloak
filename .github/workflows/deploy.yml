@@ -96,7 +96,18 @@ jobs:
               terraform apply -input=false -auto-approve
               aws eks update-kubeconfig --name "kube-demo-eks" --region "${AWS_REGION}"
               kubectl apply -f ../k8s/eks-iam-integration.yaml || true
-              terraform output ;;
+              terraform output
+              echo "--- ROUTE 53 DNS SUMMARY ---"
+              terraform output -json route53_all_dns_summary || true
+              if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                echo "### 🔐 Samba 4 AD + FreeRADIUS MFA + Keycloak DNS Endpoints" >> "$GITHUB_STEP_SUMMARY"
+                echo "" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Service | Endpoint / DNS | Description |" >> "$GITHUB_STEP_SUMMARY"
+                echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+                echo "| **Active Directory (LDAP)** | $(terraform output -raw ad_ldap_connection_url 2>/dev/null || true) | Round-Robin LDAP |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| **Keycloak IAM (SSO)** | $(terraform output -raw keycloak_sso_url 2>/dev/null || true) | Web UI / SAML 2.0 / OIDC |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| **FreeRADIUS MFA** | radius.${AWS_REGION}.compute.internal:1812 | UDP 1812 / 1813 |" >> "$GITHUB_STEP_SUMMARY"
+              fi ;;
             destroy)
               terraform destroy -input=false -auto-approve ;;
           esac
