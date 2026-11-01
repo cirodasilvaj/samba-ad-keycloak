@@ -10,11 +10,18 @@ data "aws_route53_zone" "all" {
 }
 
 locals {
-  # Filtra a zona pública fornecida pela conta temporária do laboratório
-  lab_zones = [
+  # Filtra a zona pública fornecida pela conta temporária do laboratório com fallback para qualquer zona pública
+  all_public_zones = [
     for z in data.aws_route53_zone.all : z
-    if can(regex("realhandsonlabs\\.net", z.name)) && !z.private_zone
+    if !z.private_zone
   ]
+
+  rhol_zones = [
+    for z in local.all_public_zones : z
+    if can(regex("realhandsonlabs\\.net", z.name))
+  ]
+
+  lab_zones = length(local.rhol_zones) > 0 ? local.rhol_zones : local.all_public_zones
 
   has_lab_zone = length(local.lab_zones) > 0
   lab_zone_id  = local.has_lab_zone ? local.lab_zones[0].zone_id : ""
