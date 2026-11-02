@@ -98,16 +98,16 @@ metadata:
     - url: https://github.com/cirodasilvaj/samba-ad-keycloak
       title: GitHub Source Code
       icon: github
-    - url: http://sso.799416476486.realhandsonlabs.net
+    - url: http://sso.992382723408.realhandsonlabs.net
       title: Keycloak SSO Realm
       icon: web
-    - url: http://sso.799416476486.realhandsonlabs.net/admin
+    - url: http://sso.992382723408.realhandsonlabs.net/admin
       title: Keycloak Admin Console
       icon: admin
-    - url: http://sso.799416476486.realhandsonlabs.net/realms/empresa/.well-known/openid-configuration
+    - url: http://sso.992382723408.realhandsonlabs.net/realms/empresa/.well-known/openid-configuration
       title: OIDC Discovery Configuration
       icon: lock
-    - url: http://sso.799416476486.realhandsonlabs.net/realms/empresa/protocol/saml/descriptor
+    - url: http://sso.992382723408.realhandsonlabs.net/realms/empresa/protocol/saml/descriptor
       title: SAML 2.0 Metadata Descriptor
       icon: lock
 spec:
