@@ -13,14 +13,24 @@ metadata:
   description: Samba 4 Active Directory Multi-DC (DC1 Principal + DC2 Réplica em Multi-AZ com --dns-backend=NONE e Route 53 Private Hosted Zone)
   annotations:
     github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/techdocs-ref: dir:.
+    sonarqube.org/project-key: samba-ad-keycloak
     backstage.io/kubernetes-id: samba-ad-dc
     backstage.io/kubernetes-namespace: default
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    fluentd.io/destination: "loki"
+    grafana/dashboard-selector: "samba-ad-keycloak"
   tags:
     - samba4
     - active-directory
     - ldap
     - kerberos
     - route53
+  links:
+    - url: https://github.com/cirodasilvaj/samba-ad-keycloak
+      title: GitHub Source Code
+      icon: github
 spec:
   type: service
   lifecycle: production
@@ -36,13 +46,23 @@ metadata:
   description: Servidor FreeRADIUS + PAM Google Authenticator (TOTP MFA) integrado ao Samba 4 AD para autenticação geral e MFA na VPC do EKS
   annotations:
     github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/techdocs-ref: dir:.
+    sonarqube.org/project-key: samba-ad-keycloak
     backstage.io/kubernetes-id: freeradius-mfa
     backstage.io/kubernetes-namespace: default
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    fluentd.io/destination: "loki"
+    grafana/dashboard-selector: "samba-ad-keycloak"
   tags:
     - radius
     - freeradius
     - mfa
     - totp
+  links:
+    - url: https://github.com/cirodasilvaj/samba-ad-keycloak
+      title: GitHub Source Code
+      icon: github
 spec:
   type: service
   lifecycle: production
@@ -60,14 +80,36 @@ metadata:
   description: Servidor Keycloak IAM (Broker SAML 2.0, OAuth2 e OIDC) federado via LDAP ao Samba 4 AD para autenticar Backstage, ArgoCD, Grafana e Apps Demo
   annotations:
     github.com/project-slug: cirodasilvaj/samba-ad-keycloak
+    backstage.io/techdocs-ref: dir:.
+    sonarqube.org/project-key: samba-ad-keycloak
     backstage.io/kubernetes-id: keycloak-sso
     backstage.io/kubernetes-namespace: default
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    fluentd.io/destination: "loki"
+    grafana/dashboard-selector: "samba-ad-keycloak"
   tags:
     - keycloak
     - saml2
     - oidc
     - sso
     - mfa
+  links:
+    - url: https://github.com/cirodasilvaj/samba-ad-keycloak
+      title: GitHub Source Code
+      icon: github
+    - url: http://sso.799416476486.realhandsonlabs.net
+      title: Keycloak SSO Realm
+      icon: web
+    - url: http://sso.799416476486.realhandsonlabs.net/admin
+      title: Keycloak Admin Console
+      icon: admin
+    - url: http://sso.799416476486.realhandsonlabs.net/realms/empresa/.well-known/openid-configuration
+      title: OIDC Discovery Configuration
+      icon: lock
+    - url: http://sso.799416476486.realhandsonlabs.net/realms/empresa/protocol/saml/descriptor
+      title: SAML 2.0 Metadata Descriptor
+      icon: lock
 spec:
   type: service
   lifecycle: production

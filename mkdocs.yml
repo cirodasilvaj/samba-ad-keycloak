@@ -1,0 +1,6 @@
+site_name: Samba 4 AD & Keycloak IAM Architecture
+site_description: Documentation for Enterprise IAM on AWS EKS with Samba 4 AD, FreeRADIUS MFA & Keycloak SSO
+plugins:
+  - techdocs-core
+nav:
+  - Overview: index.md
